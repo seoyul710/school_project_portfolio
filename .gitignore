@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+.env*
+!.env.example
+.wrangler/
+tmp/
+.project-registration*
+src/data/.projects-*.tmp
