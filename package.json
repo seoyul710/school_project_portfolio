@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.13.0" },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "npm run validate-data && tsc -b && vite build",
@@ -14,7 +16,7 @@
     "add-project": "node scripts/add-project.mjs"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.80",
+    "@napi-rs/canvas": "^1.0.9",
     "@openai/sites-vite-plugin": "^0.2.0",
     "pdfjs-dist": "^6.2.108",
     "react": "^19.2.0",

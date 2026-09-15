@@ -1,8 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { sites } from '@openai/sites-vite-plugin'
-import { pathToFileURL } from 'node:url'
-import path from 'node:path'
 
 function socialMetadata(): Plugin {
   return {
@@ -29,7 +27,8 @@ export default defineConfig(async ({ command, isPreview }) => ({
   },
   plugins: [react(), sites(), socialMetadata(),
     command === 'serve' && !isPreview
-      ? (await import(pathToFileURL(path.resolve('scripts/local-project-api.mjs')).href)).localProjectsPlugin()
+      // A literal import lets Vite track and reload the API and its dependencies.
+      ? (await import('./scripts/local-project-api.mjs')).localProjectsPlugin()
       : null,
   ],
 }))

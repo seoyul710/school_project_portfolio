@@ -33,12 +33,12 @@ async function readBody(req) {
   if (req.headers['content-encoding']) throw new RegistrationError('압축된 업로드는 지원하지 않습니다.')
   const contentType = req.headers['content-type'] || ''
   if (!contentType.startsWith('multipart/form-data;')) throw new RegistrationError('PDF 파일과 등록 폼을 함께 보내 주세요.')
-  if (Number(req.headers['content-length']) > MAX_BODY_BYTES) throw new RegistrationError('PDF는 20MB 이하여야 합니다.', 413)
+  if (Number(req.headers['content-length']) > MAX_BODY_BYTES) throw new RegistrationError('PDF는 100MB 이하여야 합니다.', 413)
   const chunks = []
   let size = 0
   for await (const chunk of req) {
     size += chunk.length
-    if (size > MAX_BODY_BYTES) throw new RegistrationError('PDF는 20MB 이하여야 합니다.', 413)
+    if (size > MAX_BODY_BYTES) throw new RegistrationError('PDF는 100MB 이하여야 합니다.', 413)
     chunks.push(chunk)
   }
   try {
@@ -73,7 +73,7 @@ export function createProjectMiddleware({ root }) {
       const file = form.get('pdf')
       if (typeof metadata !== 'string' || metadata.length > 30000) throw new RegistrationError('프로젝트 설명이 너무 길거나 입력 형식이 올바르지 않습니다.')
       if (!(file instanceof File)) throw new RegistrationError('PDF 파일을 선택해 주세요.')
-      if (!file.size || file.size > MAX_PDF_BYTES) throw new RegistrationError('PDF는 0바이트보다 크고 20MB 이하여야 합니다.', 413)
+      if (!file.size || file.size > MAX_PDF_BYTES) throw new RegistrationError('PDF는 0바이트보다 크고 100MB 이하여야 합니다.', 413)
       let input
       try { input = JSON.parse(metadata) } catch { throw new RegistrationError('프로젝트 입력 형식이 올바르지 않습니다.') }
       const project = await registerProject({ root, input, filename: file.name, pdfBytes: Buffer.from(await file.arrayBuffer()) })
@@ -84,6 +84,7 @@ export function createProjectMiddleware({ root }) {
   }
 }
 
+/** @returns {import('vite').Plugin} */
 export function localProjectsPlugin() {
   return {
     name: 'portfolio-local-registration',

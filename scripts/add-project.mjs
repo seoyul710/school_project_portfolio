@@ -33,7 +33,7 @@ try {
   const external = await ask('External URL (optional)', { required: false, validate: value => isValidUrl(value) ? undefined : 'http 또는 https URL을 입력해 주세요.' })
   const file = await stat(filename).catch(() => null)
   if (!file?.isFile()) throw new Error('PDF 파일을 찾을 수 없습니다. 경로를 확인해 주세요.')
-  if (file.size > MAX_PDF_BYTES) throw new Error('PDF는 20MB 이하여야 합니다.')
+  if (file.size > MAX_PDF_BYTES) throw new Error('PDF는 100MB 이하여야 합니다.')
   await registerProject({ input: { title, summary, description, category, date, tags, links: { github, external } }, filename, pdfBytes: await readFile(filename) })
   console.log('\n✓ PDF copied\n✓ Thumbnail generated\n✓ Metadata created')
   console.log(`✓ Project added: ${title}`)

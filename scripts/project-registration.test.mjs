@@ -49,7 +49,7 @@ test('unreadable PDF and colliding assets leave metadata and existing assets int
 test('field, date, URL, extension and size validation is shared', () => {
   for (const input of [{ ...projectInput, title: '' }, { ...projectInput, date: '2026-02-31' }, { ...projectInput, tags: [] }, { ...projectInput, links: { github: 'not-a-url' } }]) assert.throws(() => normalizeInput(input))
   assert.throws(() => validatePdfBytes(sourcePdf, 'file.txt'), /PDF/)
-  assert.throws(() => validatePdfBytes(Buffer.alloc(MAX_PDF_BYTES + 1), 'file.pdf'), /20MB/)
+  assert.throws(() => validatePdfBytes(Buffer.alloc(MAX_PDF_BYTES + 1), 'file.pdf'), /100MB/)
   assert.throws(() => validatePdfBytes(Buffer.from('not pdf'), 'file.pdf'), /올바르지/)
   assert.equal(normalizeInput({ ...projectInput, slug: 'ignored', pdf: 'ignored' }).slug, undefined)
 })

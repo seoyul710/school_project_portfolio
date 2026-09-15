@@ -5,7 +5,8 @@ import type { Project } from '../types/content'
 const localOnlyMessage = '프로젝트 등록은 로컬 개발 환경에서만 가능합니다. 프로젝트 폴더에서 npm run dev를 실행해 주세요.'
 const api = '/__portfolio/projects'
 const marker = { 'X-Portfolio-Request': 'local-registration' }
-const maxPdfBytes = 20 * 1024 * 1024
+const isConnectionError = (error: unknown) => error instanceof TypeError
+  || (error instanceof Error && ['NetworkError', 'TimeoutError', 'AbortError'].includes(error.name))
 
 export function ProjectRegistration({ onRegistered }: { onRegistered: (project: Project) => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -17,6 +18,8 @@ export function ProjectRegistration({ onRegistered }: { onRegistered: (project: 
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [success, setSuccess] = useState('')
+  const [maxPdfBytes, setMaxPdfBytes] = useState(0)
+  const maxPdfMegabytes = maxPdfBytes / (1024 * 1024)
 
   useEffect(() => {
     if (mode === 'closed') return
@@ -51,10 +54,12 @@ export function ProjectRegistration({ onRegistered }: { onRegistered: (project: 
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || localOnlyMessage)
       if (data.service !== 'portfolio-local-registration' || data.version !== 1 || typeof data.token !== 'string') throw new Error(localOnlyMessage)
+      if (!Number.isSafeInteger(data.maxPdfBytes) || data.maxPdfBytes <= 0) throw new Error('서버의 업로드 제한을 확인할 수 없습니다. 개발 서버를 재시작해 주세요.')
       token.current = data.token
+      setMaxPdfBytes(data.maxPdfBytes)
       setMode('form')
     } catch (error) {
-      setMessage(error instanceof Error && error.message !== 'Failed to fetch' && error.name !== 'TimeoutError' ? error.message : localOnlyMessage)
+      setMessage(isConnectionError(error) ? '등록 서버에 연결할 수 없습니다. 프로젝트 폴더에서 npm run dev를 실행한 뒤 다시 시도해 주세요.' : error instanceof Error ? error.message : localOnlyMessage)
       setMode('notice')
     } finally { setChecking(false) }
   }
@@ -65,7 +70,7 @@ export function ProjectRegistration({ onRegistered }: { onRegistered: (project: 
     const form = new FormData(event.currentTarget)
     const pdf = form.get('pdf')
     if (!(pdf instanceof File) || !pdf.size || !/\.pdf$/i.test(pdf.name) || pdf.size > maxPdfBytes) {
-      setMessage('0바이트보다 크고 20MB 이하인 PDF 파일(.pdf)을 선택해 주세요.')
+      setMessage(`0바이트보다 크고 ${maxPdfMegabytes}MB 이하인 PDF 파일(.pdf)을 선택해 주세요.`)
       return
     }
     const text = (name: string) => String(form.get(name) || '').trim()
@@ -81,6 +86,13 @@ export function ProjectRegistration({ onRegistered }: { onRegistered: (project: 
     setBusy(true)
     setMessage('')
     try {
+      // Refresh the local session after a server restart without discarding the form.
+      const sessionResponse = await fetch(api, { headers: marker, cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(4000) })
+      if (!sessionResponse.headers.get('content-type')?.includes('application/json')) throw new Error(localOnlyMessage)
+      const session = await sessionResponse.json()
+      if (!sessionResponse.ok) throw new Error(session.error || localOnlyMessage)
+      if (session.service !== 'portfolio-local-registration' || session.version !== 1 || typeof session.token !== 'string') throw new Error(localOnlyMessage)
+      token.current = session.token
       const response = await fetch(api, { method: 'POST', headers: { ...marker, 'X-Portfolio-Token': token.current }, body, credentials: 'same-origin', signal: AbortSignal.timeout(75000) })
       if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('등록 서버에 연결할 수 없습니다. 로컬 개발 서버가 실행 중인지 확인해 주세요.')
       const data = await response.json()
@@ -89,7 +101,7 @@ export function ProjectRegistration({ onRegistered }: { onRegistered: (project: 
       setSuccess('프로젝트를 저장했습니다. PDF·썸네일·데이터를 commit/push하면 공개 사이트에도 반영됩니다.')
       setMode('closed')
     } catch (error) {
-      const uncertain = !(error instanceof Error) || error.name === 'TimeoutError' || error.message === 'Failed to fetch'
+      const uncertain = !(error instanceof Error) || isConnectionError(error)
       setMessage(uncertain ? '연결이 끊겨 저장 결과를 확인하지 못했습니다. 다시 등록하기 전에 페이지를 새로고침해 목록을 확인해 주세요.' : error.message)
     } finally { submitting.current = false; setBusy(false) }
   }
@@ -123,7 +135,7 @@ export function ProjectRegistration({ onRegistered }: { onRegistered: (project: 
                 <label>Category<select name="category" required defaultValue="개인 프로젝트">{['개인 프로젝트', '팀 프로젝트', '학교 프로젝트'].map(category => <option key={category} value={category}>{category}</option>)}</select></label>
                 <label>날짜<input name="date" required maxLength={10} inputMode="numeric" aria-describedby="date-help" /><span id="date-help" className="field-help">YYYY / YYYY-MM / YYYY-MM-DD</span></label>
                 <label className="field-wide">기술 Tags<input name="tags" required maxLength={1219} aria-describedby="tags-help" /><span id="tags-help" className="field-help">쉼표로 구분해 최대 20개 · 예: Python, Linux</span></label>
-                <label className="field-wide file-field">PDF 파일<input name="pdf" type="file" accept=".pdf,application/pdf" required aria-describedby="pdf-help" /><span id="pdf-help" className="field-help">최대 20MB · 암호가 없는 PDF · 첫 페이지를 WebP로 변환</span></label>
+                <label className="field-wide file-field">PDF 파일<input name="pdf" type="file" accept=".pdf,application/pdf" required aria-describedby="pdf-help" /><span id="pdf-help" className="field-help">최대 {maxPdfMegabytes}MB · 암호가 없는 PDF · 첫 페이지를 WebP로 변환</span></label>
                 <label>GitHub URL <span className="optional">선택</span><input name="github" type="url" maxLength={2048} /></label>
                 <label>외부 URL <span className="optional">선택</span><input name="external" type="url" maxLength={2048} /></label>
               </fieldset>

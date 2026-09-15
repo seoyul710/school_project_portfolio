@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "id": "진로-활동지",
+    "slug": "진로-활동지",
+    "title": "진로 활동지",
+    "summary": "진로 시간에 활동한 학습지 모음",
+    "description": "진로 시간에 활동하며 작습한 학습지 모음입니다. 저의 강점과 노력을 담았어요.",
+    "category": "학교 프로젝트",
+    "date": "2026-09-15",
+    "tags": [
+      "학교",
+      "진로",
+      "학습지"
+    ],
+    "pdf": "projects/pdfs/진로-활동지.pdf",
+    "thumbnail": "projects/thumbnails/진로-활동지.webp"
+  }
+]

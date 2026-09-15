@@ -1,10 +1,12 @@
 import { constants } from 'node:fs'
 import { copyFile, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { Worker } from 'node:worker_threads'
+import { execFile } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { isValidDate, isValidUrl, makeSlug, validateProject } from './project-utils.mjs'
 
-export const MAX_PDF_BYTES = 20 * 1024 * 1024
+export const MAX_PDF_BYTES = 100 * 1024 * 1024
 export class RegistrationError extends Error {
   constructor(message, status = 400) { super(message); this.status = status }
 }
@@ -39,7 +41,7 @@ export function normalizeInput(input) {
 
 export function validatePdfBytes(bytes, filename) {
   if (typeof filename !== 'string' || !/\.pdf$/i.test(filename)) throw new RegistrationError('PDF 파일(.pdf)을 선택해 주세요.')
-  if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length > MAX_PDF_BYTES) throw new RegistrationError('PDF는 0바이트보다 크고 20MB 이하여야 합니다.', 413)
+  if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length > MAX_PDF_BYTES) throw new RegistrationError('PDF는 0바이트보다 크고 100MB 이하여야 합니다.', 413)
   if (bytes.subarray(0, 5).toString('ascii') !== '%PDF-') throw new RegistrationError('PDF 내용이 올바르지 않습니다. 다른 PDF 파일을 선택해 주세요.')
 }
 
@@ -66,18 +68,21 @@ async function safeDirectory(root, relative) {
   return current
 }
 
-function thumbnail(bytes) {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./pdf-thumbnail-worker.mjs', import.meta.url), { workerData: bytes, resourceLimits: { maxOldGenerationSizeMb: 192 } })
-    const timer = setTimeout(() => { void worker.terminate(); reject(new RegistrationError('PDF 처리 시간이 초과되었습니다. 더 작은 PDF로 다시 시도해 주세요.')) }, 40000)
-    worker.once('message', result => {
-      clearTimeout(timer)
-      if (result.error) reject(new RegistrationError(result.error))
-      else resolve(Buffer.from(result.webp))
-    })
-    worker.once('error', () => { clearTimeout(timer); reject(new RegistrationError('PDF를 처리하지 못했습니다. 파일을 확인해 주세요.')) })
-    worker.once('exit', code => { clearTimeout(timer); if (code !== 0) reject(new RegistrationError('PDF 처리가 중단되었습니다. 파일을 확인해 주세요.')) })
-  })
+const runFile = promisify(execFile)
+async function thumbnail(pdfPath, outputPath) {
+  try {
+    // Native canvas failures can terminate an entire process, including Worker
+    // threads. Keep rendering outside the API process and pass paths, not copies.
+    await runFile(process.execPath, [
+      '--max-old-space-size=512',
+      fileURLToPath(new URL('./pdf-thumbnail-worker.mjs', import.meta.url)),
+      pdfPath, outputPath,
+    ], { timeout: 40000, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 })
+  } catch (error) {
+    if (error.killed) throw new RegistrationError('PDF 처리 시간이 초과되었습니다. 더 작은 PDF로 다시 시도해 주세요.')
+    if (error.signal) throw new RegistrationError('PDF 이미지 처리 중 오류가 발생했습니다. PDF를 다시 내보낸 뒤 등록해 주세요. 서버는 계속 사용할 수 있습니다.')
+    throw new RegistrationError('PDF를 읽거나 첫 페이지를 렌더링할 수 없습니다. 손상되거나 암호가 설정된 PDF인지 확인해 주세요.')
+  }
 }
 
 /** Both the CLI and dev API use this exclusive, staged transaction. */
@@ -110,10 +115,9 @@ export async function registerProject({ root = process.cwd(), input, pdfBytes, f
       if (await lstat(file).catch(error => { if (error.code !== 'ENOENT') throw error; return null })) throw new RegistrationError('같은 이름의 PDF 또는 썸네일이 있습니다. 기존 파일은 덮어쓰지 않았습니다.', 409)
     }
     // Parse and render before any public file is published.
-    const webp = await thumbnail(pdfBytes)
     stage = await mkdtemp(path.join(root, '.project-registration-'))
     await writeFile(path.join(stage, 'document.pdf'), pdfBytes)
-    await writeFile(path.join(stage, 'thumbnail.webp'), webp)
+    await thumbnail(path.join(stage, 'document.pdf'), path.join(stage, 'thumbnail.webp'))
     const project = { id: slug, slug, ...fields, pdf: `projects/pdfs/${slug}.pdf`, thumbnail: `projects/thumbnails/${slug}.webp` }
     await validateProject(project, projects.length, false)
     const next = [...projects, project].sort((a, b) => b.date.localeCompare(a.date))
